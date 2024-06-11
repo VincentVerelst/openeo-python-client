@@ -93,7 +93,7 @@ class TestMultiBackendJobManager:
                 "geometry": ["POINT (1 2)"] * 5,
             }
         )
-        output_file = tmp_path / "jobs.csv"
+        output_file = tmp_path / "jobs.parquet"
 
         def start_job(row, connection, **kwargs):
             year = row["year"]
@@ -102,7 +102,7 @@ class TestMultiBackendJobManager:
         manager.run_jobs(df=df, start_job=start_job, output_file=output_file)
         assert sleep_mock.call_count > 10
 
-        result = pd.read_csv(output_file)
+        result = pd.read_parquet(output_file)
         assert len(result) == 5
         assert set(result.status) == {"finished"}
         assert set(result.backend_name) == {"foo", "bar"}
@@ -207,7 +207,7 @@ class TestMultiBackendJobManager:
                 "geometry": ["POINT (1 2)"] * 5,
             }
         )
-        output_file = tmp_path / "jobs.csv"
+        output_file = tmp_path / "jobs.parquet"
 
         def start_job(row, connection, **kwargs):
             year = row["year"]
@@ -232,7 +232,7 @@ class TestMultiBackendJobManager:
         )
 
         # Also check that we got sensible end results.
-        result = pd.read_csv(output_file)
+        result = pd.read_parquet(output_file)
         assert len(result) == 5
         assert set(result.status) == {"finished", "error"}
         assert set(result.backend_name) == {"foo", "bar"}
@@ -388,13 +388,13 @@ class TestMultiBackendJobManager:
             year = row["year"]
             return BatchJob(job_id=f"job-{year}", connection=connection)
 
-        output_file = tmp_path / "jobs.csv"
+        output_file = tmp_path / "jobs.parquet"
 
         manager.run_jobs(df=df, start_job=start_job, output_file=output_file)
         assert sleep_mock.call_count > 3
 
         # Sanity check: the job succeeded
-        result = pd.read_csv(output_file)
+        result = pd.read_parquet(output_file)
         assert len(result) == 1
         assert set(result.status) == {"finished"}
         assert set(result.backend_name) == {"foo"}
@@ -463,7 +463,7 @@ class TestMultiBackendJobManager:
             year = row["year"]
             return BatchJob(job_id=f"job-{year}", connection=connection)
 
-        output_file = tmp_path / "jobs.csv"
+        output_file = tmp_path / "jobs.parquet"
 
         with pytest.raises(requests.exceptions.RetryError) as exc:
             manager.run_jobs(df=df, start_job=start_job, output_file=output_file)
@@ -471,7 +471,7 @@ class TestMultiBackendJobManager:
         assert sleep_mock.call_count > 3
 
         # Sanity check: the job has status "error"
-        result = pd.read_csv(output_file)
+        result = pd.read_parquet(output_file)
         assert len(result) == 1
         assert set(result.status) == {"running"}
         assert set(result.backend_name) == {"foo"}

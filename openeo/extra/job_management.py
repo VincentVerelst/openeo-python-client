@@ -6,9 +6,11 @@ import time
 from pathlib import Path
 from typing import Callable, Dict, NamedTuple, Optional, Union
 
+import geopandas as gpd
 import pandas as pd
 import requests
 import shapely.wkt
+from shapely.geometry.base import BaseGeometry
 from requests.adapters import HTTPAdapter, Retry
 
 from openeo import BatchJob, Connection
@@ -52,7 +54,7 @@ class MultiBackendJobManager:
         manager.add_backend("bar", connection=openeo.connect("http://bar.test"))
 
         jobs_df = pd.DataFrame(...)
-        output_file = "jobs.csv"
+        output_file = "jobs.parquet"
 
         def start_job(
             row: pd.Series,
@@ -196,13 +198,17 @@ class MultiBackendJobManager:
             col: val for (col, val) in required_with_default if col not in df.columns
         }
         df = df.assign(**new_columns)
-        # Workaround for loading of geopandas "geometry" column.
+        # # Workaround for loading of geopandas "geometry" column.
         if "geometry" in df.columns and df["geometry"].dtype.name != "geometry":
             df["geometry"] = df["geometry"].apply(shapely.wkt.loads)
         return df
 
     def _persists(self, df, output_file):
-        df.to_csv(output_file, index=False)
+        if "geometry" in df.columns and isinstance(df["geometry"].iloc[0], BaseGeometry):
+            gdf = gpd.GeoDataFrame(df, geometry="geometry")
+            gdf.to_parquet(output_file, index=False)
+        else:
+            df.to_parquet(output_file, index=False)
         _log.info(f"Wrote job metadata to {output_file.absolute()}")
 
     def run_jobs(
@@ -244,7 +250,7 @@ class MultiBackendJobManager:
             Otherwise you will have an exception because :py:meth:`run_jobs` passes unknown parameters to ``start_job``.
 
         :param output_file:
-            Path to output file (CSV) containing the status and metadata of the jobs.
+            Path to output file (Parquet) containing the status and metadata of the jobs.
         """
         # TODO: Defining start_jobs as a Protocol might make its usage more clear, and avoid complicated doctrings,
         #   but Protocols are only supported in Python 3.8 and higher.
@@ -252,9 +258,9 @@ class MultiBackendJobManager:
         #       (e.g. if `output_file` exists: `df` is fully discarded)
         output_file = Path(output_file)
         if output_file.exists() and output_file.is_file():
-            # Resume from existing CSV
+            # Resume from existing Parquet
             _log.info(f"Resuming `run_jobs` from {output_file.absolute()}")
-            df = pd.read_csv(output_file)
+            df = pd.read_parquet(output_file)
             status_histogram = df.groupby("status").size().to_dict()
             _log.info(f"Status histogram: {status_histogram}")
 
