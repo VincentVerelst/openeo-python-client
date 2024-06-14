@@ -10,6 +10,7 @@ import datetime as dt
 import functools
 import json
 import logging
+import os
 import re
 import sys
 import time
@@ -17,7 +18,7 @@ from collections import OrderedDict
 from enum import Enum
 from pathlib import Path
 from typing import Any, Callable, List, Optional, Tuple, Union
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 
 import requests
 import shapely.geometry.base
@@ -684,3 +685,35 @@ def normalize_crs(crs: Any, *, use_pyproj: bool = True) -> Union[None, int, str]
             raise ValueError(f"Can not normalize CRS data {type(crs)}")
 
     return crs
+
+
+def is_url(output_file: str) -> bool:
+    """Check whether a given string is a valid URL."""
+    try:
+        result = urlparse(output_file)
+        return all([result.scheme, result.netloc])
+    except AttributeError:
+        return False
+
+
+def url_exists(url: str) -> bool:
+    """Check whether a given URL exists."""
+    try:
+        response = requests.head(url)
+        return response.status_code == 200
+    except requests.RequestException:
+        return False
+
+
+# TODO: support storage options other than Artifactory
+def upload_parquet(file, url):
+    """Deploys a parquet file to Artifactory."""
+    headers = {"content-type": "application/octet-stream"}
+    username = os.getenv("ARTIFACTORY_USERNAME")
+    password = os.getenv("ARTIFACTORY_PASSWORD")
+    with open(file, "rb") as f:
+        try:
+            response = requests.put(url, data=f, auth=(username, password), headers=headers)
+            response.raise_for_status()  # Raise an error for bad status codes
+        except requests.RequestException as e:
+            raise RuntimeError(f"Failed to upload file to {url}: {e}")

@@ -2,6 +2,7 @@ import contextlib
 import datetime
 import json
 import logging
+import tempfile
 import time
 from pathlib import Path
 from typing import Callable, Dict, NamedTuple, Optional, Union
@@ -12,9 +13,10 @@ from requests.adapters import HTTPAdapter, Retry
 
 from openeo import BatchJob, Connection
 from openeo.rest import OpenEoApiError
-from openeo.util import deep_get
+from openeo.util import deep_get, is_url, upload_parquet, url_exists
 
 _log = logging.getLogger(__name__)
+
 
 
 class _Backend(NamedTuple):
@@ -174,8 +176,31 @@ class MultiBackendJobManager:
         connection.session.mount("https://", HTTPAdapter(max_retries=retries))
         connection.session.mount("http://", HTTPAdapter(max_retries=retries))
 
+    def _resume_df(self, df: pd.DataFrame, output_file: Union[str, Path]) -> pd.DataFrame:
+        """Load the dataframe from a file if it exists otherwise return the original dataframe.
+
+        :param df: The original dataframe.
+        :param output_file: The file to load the dataframe from if it exists.
+        :return: a new dataframe of output_file exists, otherwise the original dataframe.
+        """
+        if is_url(output_file):
+            if url_exists(output_file):
+                _log.info(f"Resuming `run_jobs` from {output_file}")
+                df = pd.read_parquet(output_file)  # TODO: this works for artifactory, but not all URLs
+                status_histogram = df.groupby("status").size().to_dict()
+                _log.info(f"Status histogram: {status_histogram}")
+        else:
+            output_file = Path(output_file)
+            if output_file.exists() and output_file.is_file():
+                _log.info(f"Resuming `run_jobs` from {output_file.absolute()}")
+                df = pd.read_parquet(output_file)
+                status_histogram = df.groupby("status").size().to_dict()
+                _log.info(f"Status histogram: {status_histogram}")
+
+        return df
+
     def _normalize_df(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Ensure we have the required columns and the expected type for the geometry column.
+        """Load the dataframe from a file if it exists and ensure we have the required columns.
 
         :param df: The dataframe to normalize.
         :return: a new dataframe that is normalized.
@@ -199,8 +224,15 @@ class MultiBackendJobManager:
         return df
 
     def _persists(self, df, output_file):
-        df.to_parquet(output_file, index=False)
-        _log.info(f"Wrote job metadata to {output_file.absolute()}")
+        if is_url(output_file):
+            with tempfile.NamedTemporaryFile(suffix=".parquet", delete=False) as tmp_file:
+                df.to_parquet(tmp_file.name, index=False)
+                tmp_file_path = tmp_file.name
+                upload_parquet(tmp_file_path, output_file)
+                _log.info(f"Wrote job metadata to {output_file}")
+        else:
+            df.to_parquet(output_file)
+            _log.info(f"Wrote job metadata to {output_file}")
 
     def run_jobs(
         self,
@@ -245,16 +277,7 @@ class MultiBackendJobManager:
         """
         # TODO: Defining start_jobs as a Protocol might make its usage more clear, and avoid complicated doctrings,
         #   but Protocols are only supported in Python 3.8 and higher.
-        # TODO: this resume functionality better fits outside of this function
-        #       (e.g. if `output_file` exists: `df` is fully discarded)
-        output_file = Path(output_file)
-        if output_file.exists() and output_file.is_file():
-            # Resume from existing Parquet
-            _log.info(f"Resuming `run_jobs` from {output_file.absolute()}")
-            df = pd.read_parquet(output_file)
-            status_histogram = df.groupby("status").size().to_dict()
-            _log.info(f"Status histogram: {status_histogram}")
-
+        df = self._resume_df(df, output_file)
         df = self._normalize_df(df)
 
         while (
