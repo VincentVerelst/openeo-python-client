@@ -6,11 +6,8 @@ import time
 from pathlib import Path
 from typing import Callable, Dict, NamedTuple, Optional, Union
 
-import geopandas as gpd
 import pandas as pd
 import requests
-import shapely.wkt
-from shapely.geometry.base import BaseGeometry
 from requests.adapters import HTTPAdapter, Retry
 
 from openeo import BatchJob, Connection
@@ -198,17 +195,11 @@ class MultiBackendJobManager:
             col: val for (col, val) in required_with_default if col not in df.columns
         }
         df = df.assign(**new_columns)
-        # # Workaround for loading of geopandas "geometry" column.
-        if "geometry" in df.columns and df["geometry"].dtype.name != "geometry":
-            df["geometry"] = df["geometry"].apply(shapely.wkt.loads)
+
         return df
 
     def _persists(self, df, output_file):
-        if "geometry" in df.columns and isinstance(df["geometry"].iloc[0], BaseGeometry):
-            gdf = gpd.GeoDataFrame(df, geometry="geometry")
-            gdf.to_parquet(output_file, index=False)
-        else:
-            df.to_parquet(output_file, index=False)
+        df.to_parquet(output_file, index=False)
         _log.info(f"Wrote job metadata to {output_file.absolute()}")
 
     def run_jobs(
