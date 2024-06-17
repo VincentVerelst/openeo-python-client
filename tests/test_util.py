@@ -9,6 +9,8 @@ from typing import List, Union
 
 import pyproj
 import pytest
+import requests
+import requests_mock
 import shapely.geometry
 
 from openeo.capabilities import ComparableVersion
@@ -29,11 +31,13 @@ from openeo.util import (
     ensure_list,
     first_not_none,
     guess_format,
+    is_url,
     normalize_crs,
     repr_truncate,
     rfc3339,
     str_truncate,
     to_bbox_dict,
+    url_exists,
     url_join,
 )
 
@@ -1089,3 +1093,38 @@ PROJCRS["WGS 84 / UTM zone 31N",
     def test_normalize_crs_handles_incorrect_crs(self, epsg_input, use_pyproj):
         with pytest.raises(ValueError):
             normalize_crs(epsg_input, use_pyproj=use_pyproj)
+
+
+@pytest.mark.parametrize(
+    "input_url, expected",
+    [
+        ("http://example.com", True),
+        ("https://example.com", True),
+        ("http://example.com/path", True),
+        ("http://example.com/path?query=1", True),
+        ("example.com", False),
+        ("http:///path", False),
+        ("", False),
+        ("/some/path/", False),
+    ],
+)
+def test_is_url(input_url, expected):
+    assert is_url(input_url) == expected
+
+
+@pytest.mark.parametrize(
+    "status_code, expected",
+    [
+        (200, True),
+        (404, False),
+    ],
+)
+def test_url_exists(status_code, expected):
+    with requests_mock.Mocker() as mock:
+        mock.head("http://example.com", status_code=status_code)
+        assert url_exists("http://example.com") == expected
+
+    # Mocking a request that raises an exception
+    with requests_mock.Mocker() as mock:
+        mock.head("http://example.com", exc=requests.exceptions.RequestException)
+        assert url_exists("http://example.com") == False
