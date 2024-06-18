@@ -10,7 +10,6 @@ from typing import List, Union
 import pyproj
 import pytest
 import requests
-import requests_mock
 import shapely.geometry
 
 from openeo.capabilities import ComparableVersion
@@ -1112,19 +1111,12 @@ def test_is_url(input_url, expected):
     assert is_url(input_url) == expected
 
 
-@pytest.mark.parametrize(
-    "status_code, expected",
-    [
-        (200, True),
-        (404, False),
-    ],
-)
-def test_url_exists(status_code, expected):
-    with requests_mock.Mocker() as mock:
-        mock.head("http://example.com", status_code=status_code)
-        assert url_exists("http://example.com") == expected
+def test_url_exists(requests_mock):
+    requests_mock.head("http://url.exists", status_code=200)
+    assert url_exists("http://url.exists") == True
 
-    # Mocking a request that raises an exception
-    with requests_mock.Mocker() as mock:
-        mock.head("http://example.com", exc=requests.exceptions.RequestException)
-        assert url_exists("http://example.com") == False
+    requests_mock.head("http://url.existsnot", status_code=404)
+    assert url_exists("http://url.existsnot") == False
+
+    requests_mock.head("http://url.exception", exc=requests.exceptions.RequestException)
+    assert url_exists("http://url.exception") == False
