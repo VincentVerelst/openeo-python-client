@@ -211,7 +211,7 @@ class MultiBackendJobManager:
         """
 
         # check for some required columns.
- 
+
         required_with_default = [
             ("status", "not_started"),
             ("id", None),
