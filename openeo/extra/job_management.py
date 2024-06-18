@@ -185,8 +185,12 @@ class MultiBackendJobManager:
         """
         if is_url(output_file):
             if url_exists(output_file):
+                with tempfile.NamedTemporaryFile(suffix=".parquet", delete=False) as tmp_file:
+                    response = requests.get(output_file)
+                    tmp_file.write(response.content)
+                    temp_file_path = tmp_file.name
                 _log.info(f"Resuming `run_jobs` from {output_file}")
-                df = pd.read_parquet(output_file)  # TODO: this works for artifactory, but not all URLs
+                df = pd.read_parquet(temp_file_path)
                 status_histogram = df.groupby("status").size().to_dict()
                 _log.info(f"Status histogram: {status_histogram}")
         else:
@@ -207,6 +211,7 @@ class MultiBackendJobManager:
         """
 
         # check for some required columns.
+ 
         required_with_default = [
             ("status", "not_started"),
             ("id", None),
