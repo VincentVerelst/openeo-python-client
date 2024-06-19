@@ -713,7 +713,7 @@ def upload_parquet(file, url):
     password = os.getenv("ARTIFACTORY_PASSWORD")
     with open(file, "rb") as f:
         try:
-            response = requests.put(url, data=f, auth=(username, password), headers=headers)
+            response = requests.put(url, data=f.read(), auth=(username, password), headers=headers)
             response.raise_for_status()  # Raise an error for bad status codes
         except requests.RequestException as e:
             raise RuntimeError(f"Failed to upload file to {url}: {e}")

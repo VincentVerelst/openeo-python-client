@@ -1,5 +1,7 @@
 import json
+import tempfile
 import threading
+from io import BytesIO
 from unittest import mock
 
 # TODO: can we avoid using httpretty?
@@ -363,6 +365,22 @@ class TestMultiBackendJobManager:
                 "backend_name",
             ]
         )
+
+    def test_persists_url(self, requests_mock):
+        def handle_put(request, context):
+            df_persisted = pd.read_parquet(BytesIO(request.body))
+            pd.testing.assert_frame_equal(df, df_persisted)
+            return ""
+
+        df = pd.DataFrame(
+            {
+                "some_number": [3, 2, 1],
+            }
+        )
+        url = "http://foo.test/jobs.parquet"
+        requests_mock.put(url, text=handle_put)
+        manager = MultiBackendJobManager()
+        manager._persists(df, url)
 
     @httpretty.activate(allow_net_connect=False, verbose=True)
     @pytest.mark.parametrize("http_error_status", [502, 503, 504])
